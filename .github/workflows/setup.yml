@@ -1,0 +1,12 @@
+name: Pull in shared repo
+
+on: [push]
+
+jobs:
+  fetch-repo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pull shared repo
+        run: |
+          git clone https://github.com/mrjcleaver/dev-context dev-context
