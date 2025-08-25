@@ -10,4 +10,4 @@ jobs:
       - name: Pull shared repo
         run: |
           git clone https://github.com/mrjcleaver/dev-context dev-context
-          git clone https://github.com/mrjcleaver/agentic-devpod/ .devcontainer
+          #git clone https://github.com/mrjcleaver/agentic-devpod/ .devcontainer
