@@ -1,0 +1,119 @@
+# Production Load Test Configuration
+# Safe load testing for production environment with realistic usage patterns
+
+config:
+  target: "{{ $processEnvironment.LOAD_TEST_TARGET || 'https://api.aicompare.app' }}"
+  
+  # Conservative phases for production
+  phases:
+    # Warm-up
+    - duration: 120
+      arrivalRate: 1
+      name: "Production warm-up"
+    
+    # Light load
+    - duration: 300
+      arrivalRate: 2
+      rampTo: 5
+      name: "Light production load"
+    
+    # Normal usage
+    - duration: 600
+      arrivalRate: 5
+      name: "Normal production usage"
+    
+    # Peak hours simulation
+    - duration: 300
+      arrivalRate: 5
+      rampTo: 10
+      name: "Peak hours"
+    
+    # Cool-down
+    - duration: 180
+      arrivalRate: 10
+      rampTo: 1
+      name: "Cool-down"
+
+  defaults:
+    headers:
+      Content-Type: "application/json"
+      User-Agent: "Artillery Production Test"
+
+  # Strict production thresholds
+  ensure:
+    maxErrorRate: 0.5      # Max 0.5% error rate in production
+    maxResponseTime: 1500  # Max 1.5 second response time
+    minThresholds:
+      p95: 1000           # 95th percentile under 1 second
+      p99: 1500           # 99th percentile under 1.5 seconds
+
+  plugins:
+    metrics-by-endpoint: {}
+    publish-metrics:
+      - type: datadog
+        tags:
+          - "environment:production"
+          - "test_type:production_load"
+
+  # Production-safe test data
+  variables:
+    prodTestPrompts:
+      - "What is the capital of France?"
+      - "Explain the water cycle"
+      - "How do computers work?"
+      - "What is climate change?"
+      - "Define machine learning"
+
+scenarios:
+  # Read-only operations (safe for production)
+  - name: "Health Checks"
+    weight: 20
+    flow:
+      - get:
+          url: "/health"
+          expect:
+            - statusCode: 200
+
+      - get:
+          url: "/api/health"
+          expect:
+            - statusCode: 200
+
+  # Public API endpoints (read-only)
+  - name: "Public API Access"
+    weight: 30
+    flow:
+      - get:
+          url: "/api/models"
+          expect:
+            - statusCode: 200
+
+      - get:
+          url: "/api/analytics/public-stats"
+          expect:
+            - statusCode: 200
+
+  # Frontend asset loading
+  - name: "Frontend Assets"
+    weight: 25
+    flow:
+      - get:
+          url: "/"
+          expect:
+            - statusCode: 200
+
+      - get:
+          url: "/dashboard"
+          expect:
+            - statusCode: [200, 302] # May redirect if not authenticated
+
+  # Authenticated read operations
+  - name: "Authenticated Reads"
+    weight: 25
+    flow:
+      - get:
+          url: "/api/user/settings"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.PRODUCTION_TEST_TOKEN }}"
+          expect:
+            - statusCode: [200, 401] # 401 if token invalid, which is fine

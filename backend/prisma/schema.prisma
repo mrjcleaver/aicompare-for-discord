@@ -1,0 +1,234 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum VoteType {
+  THUMBS_UP
+  THUMBS_DOWN
+  STAR_RATING
+}
+
+enum QueryStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ResponseStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  TIMEOUT
+}
+
+model User {
+  id                String      @id @default(cuid())
+  discordId         String      @unique @map("discord_id")
+  username          String
+  encryptedApiKeys  Json        @default("{}") @map("encrypted_api_keys")
+  preferences       Json        @default("{}") @map("preferences")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  lastActive        DateTime    @updatedAt @map("last_active")
+  
+  // Relationships
+  queries           Query[]
+  votes             Vote[]
+  comments          Comment[]
+  userTeams         UserTeam[]
+  auditLogs         AuditLog[]
+
+  @@map("users")
+}
+
+model Team {
+  id               String     @id @default(cuid())
+  discordServerId  String     @unique @map("discord_server_id")
+  name             String
+  settings         Json       @default("{}") @map("settings")
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
+  
+  // Relationships
+  queries          Query[]
+  userTeams        UserTeam[]
+
+  @@map("teams")
+}
+
+model UserTeam {
+  id       String   @id @default(cuid())
+  userId   String   @map("user_id")
+  teamId   String   @map("team_id")
+  role     Role     @default(MEMBER)
+  joinedAt DateTime @default(now()) @map("joined_at")
+  
+  // Relationships
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamId])
+  @@map("user_teams")
+}
+
+model Query {
+  id               String      @id @default(cuid())
+  userId           String      @map("user_id")
+  teamId           String      @map("team_id")
+  prompt           String      @db.Text
+  parameters       Json        @default("{}")
+  modelsRequested  String[]    @map("models_requested")
+  status           QueryStatus @default(PENDING)
+  discordMessageId String?     @map("discord_message_id")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+  
+  // Relationships
+  user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team             Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  responses        Response[]
+  comments         Comment[]
+  comparisons      Comparison[]
+
+  @@index([userId])
+  @@index([teamId])
+  @@index([createdAt])
+  @@map("queries")
+}
+
+model Response {
+  id              String         @id @default(cuid())
+  queryId         String         @map("query_id")
+  modelName       String         @map("model_name")
+  content         String         @db.Text
+  metadata        Json           @default("{}")
+  responseTimeMs  Int            @map("response_time_ms")
+  tokenCount      Int            @map("token_count")
+  costUsd         Decimal        @default(0) @map("cost_usd") @db.Decimal(10, 6)
+  status          ResponseStatus @default(PENDING)
+  error           String?        @db.Text
+  createdAt       DateTime       @default(now()) @map("created_at")
+  
+  // Relationships
+  query           Query          @relation(fields: [queryId], references: [id], onDelete: Cascade)
+  votes           Vote[]
+
+  @@index([queryId])
+  @@index([modelName])
+  @@index([createdAt])
+  @@map("responses")
+}
+
+model Vote {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  responseId String   @map("response_id")
+  voteType   VoteType @map("vote_type")
+  value      Int
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  
+  // Relationships
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  response   Response @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, responseId, voteType])
+  @@index([responseId])
+  @@map("votes")
+}
+
+model Comment {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  queryId         String   @map("query_id")
+  content         String   @db.Text
+  discordThreadId String?  @map("discord_thread_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  
+  // Relationships
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  query           Query    @relation(fields: [queryId], references: [id], onDelete: Cascade)
+
+  @@index([queryId])
+  @@index([createdAt])
+  @@map("comments")
+}
+
+model Comparison {
+  id                  String   @id @default(cuid())
+  queryId             String   @map("query_id")
+  semanticSimilarity  Float    @map("semantic_similarity")
+  lengthComparison    Float    @map("length_comparison")
+  sentimentAlignment  Float    @map("sentiment_alignment")
+  factualConsistency  Float    @map("factual_consistency")
+  responseTimeComp    Float    @map("response_time_comparison")
+  aggregateScore      Float    @map("aggregate_score")
+  metadata            Json     @default("{}")
+  createdAt           DateTime @default(now()) @map("created_at")
+  
+  // Relationships
+  query               Query    @relation(fields: [queryId], references: [id], onDelete: Cascade)
+
+  @@unique([queryId])
+  @@map("comparisons")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?  @map("user_id")
+  action    String
+  resource  String
+  details   Json     @default("{}")
+  ipAddress String   @map("ip_address")
+  userAgent String   @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  // Relationships
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  provider    String
+  keyHash     String   @map("key_hash")
+  lastUsed    DateTime? @map("last_used")
+  usageCount  Int      @default(0) @map("usage_count")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([provider])
+  @@map("api_keys")
+}
+
+model RateLimitEntry {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  count     Int      @default(1)
+  resetAt   DateTime @map("reset_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([resetAt])
+  @@map("rate_limits")
+}

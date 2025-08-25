@@ -1,0 +1,115 @@
+# Stress Test Configuration
+# Tests application behavior under extreme load conditions
+
+config:
+  target: "{{ $processEnvironment.LOAD_TEST_TARGET || 'http://localhost:3001' }}"
+  phases:
+    # Baseline
+    - duration: 60
+      arrivalRate: 10
+      name: "Baseline"
+    
+    # Aggressive ramp-up
+    - duration: 180
+      arrivalRate: 10
+      rampTo: 100
+      name: "Stress ramp-up"
+    
+    # Peak stress
+    - duration: 300
+      arrivalRate: 100
+      name: "Peak stress"
+    
+    # Spike test
+    - duration: 60
+      arrivalRate: 100
+      rampTo: 200
+      name: "Spike"
+    
+    # Sustained high load
+    - duration: 240
+      arrivalRate: 150
+      name: "Sustained high load"
+    
+    # Gradual recovery
+    - duration: 120
+      arrivalRate: 150
+      rampTo: 10
+      name: "Recovery"
+
+  defaults:
+    headers:
+      Content-Type: "application/json"
+      User-Agent: "Artillery Stress Test"
+
+  # More lenient thresholds for stress testing
+  ensure:
+    maxErrorRate: 5        # Max 5% error rate under stress
+    maxResponseTime: 5000  # Max 5 second response time under stress
+
+  plugins:
+    metrics-by-endpoint: {}
+    publish-metrics:
+      - type: datadog
+        tags:
+          - "environment:{{ $processEnvironment.NODE_ENV || 'test' }}"
+          - "test_type:stress"
+
+  processor: "./scripts/stress-test-processor.js"
+
+scenarios:
+  # High-frequency comparison creation
+  - name: "Rapid Comparison Creation"
+    weight: 50
+    flow:
+      - post:
+          url: "/api/auth/test-login"
+          json:
+            userId: "stress-user-{{ $randomInt(1, 100) }}"
+            testMode: true
+          capture:
+            - json: "$.token"
+              as: "authToken"
+      
+      - post:
+          url: "/api/comparisons"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          json:
+            prompt: "Stress test prompt {{ $randomString(10) }}"
+            models: ["gpt-4", "claude-3.5-sonnet", "gemini-1.5-pro"]
+            parameters:
+              temperature: "{{ $randomNumber(0.1, 1.0) }}"
+              maxTokens: "{{ $randomInt(500, 2000) }}"
+
+  # Concurrent voting stress
+  - name: "Voting Stress"
+    weight: 30
+    flow:
+      - get:
+          url: "/api/comparisons?page=1&limit=50"
+          capture:
+            - json: "$.comparisons[{{ $randomInt(0, 49) }}].responses[0].id"
+              as: "responseId"
+
+      - post:
+          url: "/api/responses/{{ responseId }}/vote"
+          json:
+            voteType: "{{ $randomString(['thumbs_up', 'thumbs_down', 'star_rating']) }}"
+            value: "{{ $randomInt(1, 5) }}"
+
+  # Analytics stress
+  - name: "Analytics Load"
+    weight: 20
+    flow:
+      - get:
+          url: "/api/analytics/comparison-metrics"
+          qs:
+            period: "{{ $randomString(['1d', '7d', '30d', '90d']) }}"
+            detailed: true
+
+      - get:
+          url: "/api/analytics/model-performance"
+          qs:
+            models: "gpt-4,claude-3.5-sonnet,gemini-1.5-pro,command-r-plus"
+            metrics: "all"

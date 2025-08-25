@@ -137,3 +137,46 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Project-specific files
+uploads/
+public/uploads/
+cert/
+certs/
+*.pem
+*.crt
+*.key
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Docker
+docker-compose.override.yml
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# PM2
+.pm2/
+
+# Generated files
+generated/
+dist-*/
+
+# Storybook build outputs
+storybook-static/

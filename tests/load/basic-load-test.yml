@@ -1,0 +1,254 @@
+# Basic Load Test Configuration
+# Tests normal application load with standard usage patterns
+
+config:
+  target: "{{ $processEnvironment.LOAD_TEST_TARGET || 'http://localhost:3001' }}"
+  phases:
+    # Warm-up phase
+    - duration: 60
+      arrivalRate: 2
+      name: "Warm-up"
+    
+    # Gradual ramp-up
+    - duration: 120
+      arrivalRate: 5
+      rampTo: 15
+      name: "Ramp-up"
+    
+    # Sustained load
+    - duration: 300
+      arrivalRate: 15
+      name: "Sustained load"
+    
+    # Peak load simulation
+    - duration: 180
+      arrivalRate: 15
+      rampTo: 30
+      name: "Peak load"
+    
+    # Cool-down
+    - duration: 60
+      arrivalRate: 30
+      rampTo: 5
+      name: "Cool-down"
+
+  # Global configuration
+  defaults:
+    headers:
+      Content-Type: "application/json"
+      User-Agent: "Artillery Load Test"
+
+  # Performance thresholds
+  ensure:
+    maxErrorRate: 2        # Max 2% error rate
+    maxResponseTime: 2000  # Max 2 second response time
+    minThresholds: 
+      p95: 1500           # 95th percentile under 1.5 seconds
+      p99: 2000           # 99th percentile under 2 seconds
+
+  # Plugins for enhanced reporting
+  plugins:
+    metrics-by-endpoint: {}
+    publish-metrics:
+      - type: datadog
+        apiKey: "{{ $processEnvironment.DATADOG_API_KEY }}"
+        prefix: "artillery.aicompare"
+        tags:
+          - "environment:{{ $processEnvironment.NODE_ENV || 'test' }}"
+          - "test_type:load"
+    expect: {}
+
+  # Variables for dynamic test data
+  variables:
+    userIds:
+      - "user-load-test-1"
+      - "user-load-test-2" 
+      - "user-load-test-3"
+      - "user-load-test-4"
+      - "user-load-test-5"
+    
+    testPrompts:
+      - "Explain artificial intelligence in simple terms"
+      - "What are the benefits of renewable energy?"
+      - "How does blockchain technology work?"
+      - "Describe the process of photosynthesis"
+      - "What is machine learning and how is it used?"
+      - "Explain quantum computing principles"
+      - "What are the advantages of cloud computing?"
+      - "How do neural networks function?"
+      - "What is the difference between AI and ML?"
+      - "Describe sustainable development practices"
+    
+    models:
+      - ["gpt-4"]
+      - ["claude-3.5-sonnet"]
+      - ["gpt-4", "claude-3.5-sonnet"]
+      - ["gpt-4", "claude-3.5-sonnet", "gemini-1.5-pro"]
+
+  # Processor functions
+  processor: "./scripts/load-test-processor.js"
+
+scenarios:
+  # Authentication flow
+  - name: "User Authentication"
+    weight: 10
+    flow:
+      - post:
+          url: "/api/auth/test-login"
+          json:
+            userId: "{{ userIds[$randomInt(0, 4)] }}"
+            testMode: true
+          capture:
+            - json: "$.token"
+              as: "authToken"
+          expect:
+            - statusCode: 200
+            - hasProperty: "token"
+
+  # API Health checks
+  - name: "Health Check"
+    weight: 5
+    flow:
+      - get:
+          url: "/api/health"
+          expect:
+            - statusCode: 200
+            - contentType: "application/json"
+            - hasProperty: "status"
+            - equals:
+              - "{{ status }}"
+              - "healthy"
+
+  # Core comparison workflow
+  - name: "Create Comparison"
+    weight: 40
+    flow:
+      # Authenticate first
+      - post:
+          url: "/api/auth/test-login"
+          json:
+            userId: "{{ userIds[$randomInt(0, 4)] }}"
+            testMode: true
+          capture:
+            - json: "$.token"
+              as: "authToken"
+      
+      # Create comparison
+      - post:
+          url: "/api/comparisons"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          json:
+            prompt: "{{ testPrompts[$randomInt(0, 9)] }}"
+            models: "{{ models[$randomInt(0, 3)] }}"
+            parameters:
+              temperature: 0.7
+              maxTokens: 1000
+          capture:
+            - json: "$.comparison.id"
+              as: "comparisonId"
+          expect:
+            - statusCode: 201
+            - hasProperty: "comparison"
+            - hasProperty: "comparison.id"
+
+      # Poll for completion (simulate real usage)
+      - loop:
+          count: 10
+          over:
+            - get:
+                url: "/api/comparisons/{{ comparisonId }}"
+                headers:
+                  Authorization: "Bearer {{ authToken }}"
+                expect:
+                  - statusCode: 200
+                capture:
+                  - json: "$.comparison.status"
+                    as: "status"
+                ifTrue: "status === 'completed'"
+                break: true
+            - think: 2 # Wait 2 seconds between polls
+
+  # Voting workflow
+  - name: "Vote on Responses"
+    weight: 25
+    flow:
+      # Get existing comparison
+      - get:
+          url: "/api/comparisons"
+          expect:
+            - statusCode: 200
+          capture:
+            - json: "$.comparisons[0].id"
+              as: "comparisonId"
+            - json: "$.comparisons[0].responses[0].id"
+              as: "responseId"
+
+      # Submit vote
+      - post:
+          url: "/api/responses/{{ responseId }}/vote"
+          json:
+            voteType: "thumbs_up"
+            value: 1
+          expect:
+            - statusCode: 200
+            - hasProperty: "vote"
+
+      # Submit star rating
+      - post:
+          url: "/api/responses/{{ responseId }}/vote"
+          json:
+            voteType: "star_rating"
+            value: "{{ $randomInt(3, 5) }}" # 3-5 star ratings
+          expect:
+            - statusCode: 200
+            - hasProperty: "vote"
+
+  # History and analytics
+  - name: "Browse History"
+    weight: 15
+    flow:
+      # Get comparison history
+      - get:
+          url: "/api/comparisons?page=1&limit=10"
+          expect:
+            - statusCode: 200
+            - hasProperty: "comparisons"
+            - hasProperty: "pagination"
+
+      # Get analytics data
+      - get:
+          url: "/api/analytics/comparison-metrics?period=7d"
+          expect:
+            - statusCode: 200
+            - hasProperty: "metrics"
+
+      # Get model performance
+      - get:
+          url: "/api/analytics/model-performance?models=gpt-4,claude-3.5-sonnet"
+          expect:
+            - statusCode: 200
+            - hasProperty: "performance"
+
+  # User settings
+  - name: "Manage Settings"
+    weight: 5
+    flow:
+      # Get user settings
+      - get:
+          url: "/api/user/settings"
+          expect:
+            - statusCode: 200
+            - hasProperty: "settings"
+
+      # Update settings
+      - put:
+          url: "/api/user/settings"
+          json:
+            defaultModels: ["gpt-4", "claude-3.5-sonnet"]
+            notifications:
+              completion: true
+              votes: false
+          expect:
+            - statusCode: 200
+            - hasProperty: "settings"

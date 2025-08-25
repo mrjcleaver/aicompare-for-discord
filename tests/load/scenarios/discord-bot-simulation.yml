@@ -1,0 +1,148 @@
+# Discord Bot Load Test
+# Simulates Discord webhook requests and bot command processing
+
+config:
+  target: "{{ $processEnvironment.DISCORD_BOT_TARGET || 'http://localhost:3002' }}"
+  phases:
+    # Gradual Discord server activity
+    - duration: 60
+      arrivalRate: 1
+      name: "Discord warm-up"
+    
+    # Normal Discord usage
+    - duration: 300
+      arrivalRate: 3
+      rampTo: 8
+      name: "Normal Discord activity"
+    
+    # Peak Discord usage (multiple servers active)
+    - duration: 180
+      arrivalRate: 8
+      rampTo: 15
+      name: "Peak Discord activity"
+    
+    # Cool-down
+    - duration: 60
+      arrivalRate: 15
+      rampTo: 2
+      name: "Discord cool-down"
+
+  defaults:
+    headers:
+      Content-Type: "application/json"
+      User-Agent: "Discord-Bot-Load-Test"
+
+  ensure:
+    maxErrorRate: 1
+    maxResponseTime: 3000
+
+  variables:
+    discordServers:
+      - "guild-test-001"
+      - "guild-test-002"
+      - "guild-test-003"
+      - "guild-test-004"
+      - "guild-test-005"
+    
+    discordUsers:
+      - { id: "user-001", name: "TestUser1" }
+      - { id: "user-002", name: "TestUser2" }
+      - { id: "user-003", name: "TestUser3" }
+      - { id: "user-004", name: "TestUser4" }
+      - { id: "user-005", name: "TestUser5" }
+
+scenarios:
+  # /compare command simulation
+  - name: "Discord Compare Command"
+    weight: 60
+    flow:
+      - post:
+          url: "/discord/interactions"
+          json:
+            type: 2  # Application Command
+            data:
+              name: "compare"
+              options:
+                - name: "prompt"
+                  value: "What is the difference between AI and ML?"
+                - name: "models"
+                  value: "gpt4,claude35"
+                - name: "temperature"
+                  value: 0.7
+            guild_id: "{{ discordServers[$randomInt(0, 4)] }}"
+            channel_id: "channel-{{ $randomInt(100, 999) }}"
+            user:
+              id: "{{ discordUsers[$randomInt(0, 4)].id }}"
+              username: "{{ discordUsers[$randomInt(0, 4)].name }}"
+            token: "discord_interaction_token_{{ $randomString(32) }}"
+          expect:
+            - statusCode: 200
+            - hasProperty: "type"
+
+  # /history command simulation
+  - name: "Discord History Command"
+    weight: 20
+    flow:
+      - post:
+          url: "/discord/interactions"
+          json:
+            type: 2
+            data:
+              name: "history"
+              options:
+                - name: "limit"
+                  value: 10
+                - name: "filter"
+                  value: "gpt-4"
+            guild_id: "{{ discordServers[$randomInt(0, 4)] }}"
+            channel_id: "channel-{{ $randomInt(100, 999) }}"
+            user:
+              id: "{{ discordUsers[$randomInt(0, 4)].id }}"
+              username: "{{ discordUsers[$randomInt(0, 4)].name }}"
+            token: "discord_interaction_token_{{ $randomString(32) }}"
+          expect:
+            - statusCode: 200
+
+  # /settings command simulation  
+  - name: "Discord Settings Command"
+    weight: 15
+    flow:
+      - post:
+          url: "/discord/interactions"
+          json:
+            type: 2
+            data:
+              name: "settings"
+              options:
+                - name: "models"
+                  value: "gpt-4,claude-3.5-sonnet"
+            guild_id: "{{ discordServers[$randomInt(0, 4)] }}"
+            channel_id: "channel-{{ $randomInt(100, 999) }}"
+            user:
+              id: "{{ discordUsers[$randomInt(0, 4)].id }}"
+              username: "{{ discordUsers[$randomInt(0, 4)].name }}"
+            token: "discord_interaction_token_{{ $randomString(32) }}"
+          expect:
+            - statusCode: 200
+
+  # Discord button interactions (voting)
+  - name: "Discord Button Interactions"
+    weight: 5
+    flow:
+      - post:
+          url: "/discord/interactions"
+          json:
+            type: 3  # Message Component
+            data:
+              component_type: 2  # Button
+              custom_id: "vote_comparison-123_thumbs_up"
+            guild_id: "{{ discordServers[$randomInt(0, 4)] }}"
+            channel_id: "channel-{{ $randomInt(100, 999) }}"
+            message:
+              id: "message-{{ $randomInt(1000, 9999) }}"
+            user:
+              id: "{{ discordUsers[$randomInt(0, 4)].id }}"
+              username: "{{ discordUsers[$randomInt(0, 4)].name }}"
+            token: "discord_interaction_token_{{ $randomString(32) }}"
+          expect:
+            - statusCode: 200
